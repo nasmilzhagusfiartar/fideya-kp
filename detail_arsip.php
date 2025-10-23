@@ -256,6 +256,7 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Detail Arsip - PsiArsip</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         .sidebar-item:hover, .sidebar-item.active { background-color: #2563eb; }
@@ -268,14 +269,14 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
 <body class="bg-gray-50 text-gray-800 font-sans">
 
     <div class="relative min-h-screen md:flex">
-        <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
+         <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
             <button id="hamburger-btn" class="focus:outline-none"><i class="fas fa-bars fa-lg"></i></button>
-            <h1 class="text-xl font-bold">PsiArsip</h1>
+            <h1 class="text-xl font-bold hidden md:flex">PsiArsip</h1>
             <div class="w-8"></div>
         </header>
 
         <aside id="sidebar" class="bg-blue-800 text-white w-64 flex-col fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 md:flex z-30">
-            <div class="hidden md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">PsiArsip</div>
+            <div class=" md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">PsiArsip</div>
             <nav class="flex-1 p-4 space-y-2">
                 <a href="dashboard.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-tachometer-alt w-6 text-center mr-3"></i>Dashboard</a>
                 <a href="arsip.php" class="sidebar-item active flex items-center p-3 rounded-lg transition duration-200 admin-doctor"><i class="fas fa-folder-open w-6 text-center mr-3"></i>Arsip Pasien</a>
@@ -356,9 +357,9 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
                                                         data-filepath="<?php echo htmlspecialchars($p['file_path']); ?>"
                                                     ><i class="fas fa-edit"></i></button>
                                                     
-                                                    <a href="?code=<?php echo urlencode($archiveCode); ?>&delete_id=<?php echo $p['id']; ?>" 
-                                                        onclick="return confirm('Apakah Anda yakin ingin menghapus pasien <?php echo addslashes($p['name']); ?>?')" 
-                                                        class="text-red-500"><i class="fas fa-trash"></i></a>
+                                                    <a href="?code=<?php echo urlencode($archiveCode); ?>&delete_id=<?php echo $p['id']; ?>" class="btn-delete text-red-500">
+                                                        <i class="fas fa-trash"></i>
+                                                    </a>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -511,6 +512,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
     searchInput.addEventListener('input', filterAndRenderTable);
     filterDokter.addEventListener('change', filterAndRenderTable);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Cek status pesan dari URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const status = urlParams.get('status');
+    const msg = urlParams.get('msg');
+
+    if (status === 'success') {
+        Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            text: decodeURIComponent(msg),
+            timer: 2000,
+            showConfirmButton: false
+        });
+        // Hapus parameter dari URL tanpa reload ulang
+        setTimeout(() => {
+            const cleanUrl = window.location.origin + window.location.pathname + window.location.search.replace(/[?&]status=[^&]+/, '').replace(/[?&]msg=[^&]+/, '');
+            window.history.replaceState({}, document.title, cleanUrl);
+        }, 2500);
+    } else if (status === 'error') {
+        Swal.fire({
+            icon: 'error',
+            title: 'Gagal!',
+            text: decodeURIComponent(msg),
+            confirmButtonText: 'Tutup'
+        });
+        setTimeout(() => {
+            const cleanUrl = window.location.origin + window.location.pathname + window.location.search.replace(/[?&]status=[^&]+/, '').replace(/[?&]msg=[^&]+/, '');
+            window.history.replaceState({}, document.title, cleanUrl);
+        }, 2500);
+    }
+
+    // ===============================
+    // SweetAlert2 Konfirmasi Delete
+    // ===============================
+    const deleteLinks = document.querySelectorAll('a[href*="delete_id="]');
+    deleteLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const href = link.getAttribute('href');
+            const row = link.closest('tr');
+            const name = row ? row.cells[0].textContent.trim() : 'pasien ini';
+            Swal.fire({
+                title: 'Yakin ingin menghapus?',
+                text: `Data pasien "${name}" akan dihapus permanen.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Ya, hapus!',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window.location.href = href;
+                }
+            });
+        });
+    });
 });
 </script>
 </body>

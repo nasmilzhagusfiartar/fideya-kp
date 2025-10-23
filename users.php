@@ -1,6 +1,7 @@
 <?php
-include 'auth_check.php';
-include 'db_connect.php';
+// Pastikan file-file ini ada dan berfungsi
+include 'auth_check.php'; 
+include 'db_connect.php'; 
 
 // HANYA UNTUK ADMIN
 if (!isAdmin()) {
@@ -11,8 +12,7 @@ if (!isAdmin()) {
 $error_message = '';
 $success_message = '';
 
-// **REVISI: Mendefinisikan email user yang sedang login dengan aman menggunakan Null Coalescing (??)**
-// Ini mencegah "Warning: Undefined array key" jika 'user_email' tidak ada dalam sesi.
+// Mendefinisikan email user yang sedang login dengan aman
 $logged_in_email = $_SESSION['user_email'] ?? null;
 
 
@@ -27,9 +27,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     // Logika Hapus User
     if ($action === 'delete') {
-        // Pengecekan Keamanan Tambahan: Admin tidak bisa menghapus akunnya sendiri (di sisi server)
+        // Pengecekan Keamanan Tambahan: Admin tidak bisa menghapus akunnya sendiri
         $can_delete = true;
         if ($logged_in_email && $id) {
+            // Gunakan prepared statement untuk mencegah SQL Injection
             $check_stmt = $conn->prepare("SELECT email FROM users WHERE id=?");
             $check_stmt->bind_param("i", $id);
             $check_stmt->execute();
@@ -67,7 +68,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if (!empty($error_message)) {
             // Lewati proses DB jika ada error validasi
         } elseif (!empty($password)) {
-            // Gunakan MD5 untuk kesamaan dengan login, GANTI dengan password_hash() untuk produksi
+            // GANTI MD5 dengan password_hash() untuk keamanan produksi
             $password_hash = MD5($password); 
             
             if ($is_new_user) {
@@ -98,44 +99,49 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             } else {
                 // MySQL Error 1062 = Duplicate entry (kemungkinan email)
                 if ($conn->errno == 1062) {
-                     $error_message = "Gagal menyimpan user: Email mungkin sudah digunakan.";
+                       $error_message = "Gagal menyimpan user: Email mungkin sudah digunakan.";
                 } else {
-                     $error_message = "Gagal menyimpan user: " . $conn->error;
+                       $error_message = "Gagal menyimpan user: " . $conn->error;
                 }
             }
             $stmt->close();
         }
     }
     
-    // Redirect untuk menghindari form resubmission
+    // Redirect untuk menghindari form resubmission dan menampilkan SweetAlert
     if (!empty($success_message) || !empty($error_message)) {
         $status = empty($success_message) ? 'error' : 'success';
         $msg = empty($success_message) ? $error_message : $success_message;
+        
+        // Penting: Tutup koneksi sebelum redirect jika tidak diperlukan lagi
+        if (isset($conn)) $conn->close();
         
         header("Location: users.php?status=" . $status . "&msg=" . urlencode($msg));
         exit;
     }
 }
 
-// Ambil pesan dari URL (setelah redirect)
-if (isset($_GET['status']) && isset($_GET['msg'])) {
-    if ($_GET['status'] === 'success') {
-        $success_message = urldecode($_GET['msg']);
-    } else {
-        $error_message = urldecode($_GET['msg']);
-    }
-}
+// Ambil pesan dari URL (setelah redirect) - Notifikasi SweetAlert akan mengambil ini
+// Note: Karena SweetAlert akan menangani tampilan pesan ini, variabel $success_message/$error_message 
+// di sini tidak akan dipakai untuk div alert default. Namun, ini tetap perlu untuk logika PHP.
+// Kita akan hapus div alert di HTML untuk menghindari duplikasi.
 
 // 2. Ambil Daftar User dari Database
 $users = [];
+// Pastikan koneksi dibuka kembali jika ditutup sebelumnya (hanya jika ada logika di atas yang menutup)
+if (!isset($conn) || $conn->ping() === false) {
+    include 'db_connect.php'; 
+}
 $result = $conn->query("SELECT id, name, email, role FROM users ORDER BY role, name");
 while ($row = $result->fetch_assoc()) {
     $users[] = $row;
 }
 $conn->close();
 
-$role_display = ucfirst($current_user_role); 
-$initial_char = strtoupper(substr($current_user_name, 0, 1));
+// Variabel untuk tampilan sidebar
+// Asumsi variabel-variabel ini didefinisikan di auth_check.php
+$role_display = ucfirst($current_user_role ?? 'Guest'); 
+$initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -144,6 +150,7 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manajemen User - PsiArsip</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         .sidebar-item:hover, .sidebar-item.active { background-color: #2563eb; }
@@ -156,12 +163,12 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
     <div class="relative min-h-screen md:flex">
         <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
             <button id="hamburger-btn" class="focus:outline-none"><i class="fas fa-bars fa-lg"></i></button>
-            <h1 class="text-xl font-bold">PsiArsip</h1>
+            <h1 class="text-xl font-bold hidden md:flex">PsiArsip</h1>
             <div class="w-8"></div>
         </header>
 
         <aside id="sidebar" class="bg-blue-800 text-white w-64 flex-col fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 md:flex z-30">
-            <div class="hidden md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">PsiArsip</div>
+            <div class=" md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">PsiArsip</div>
             <nav class="flex-1 p-4 space-y-2">
                 <a href="dashboard.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-tachometer-alt w-6 text-center mr-3"></i>Dashboard</a>
                 <a href="arsip.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-folder-open w-6 text-center mr-3"></i>Arsip Pasien</a>
@@ -189,11 +196,14 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
                             <input type="text" id="search-user" placeholder="Cari nama atau email..." class="w-1/3 border rounded-lg px-4 py-2">
                         </div>
                         
-                        <?php if ($success_message): ?>
+                        <?php 
+                        /* if ($success_message): ?>
                             <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4"><?php echo $success_message; ?></div>
                         <?php elseif ($error_message): ?>
                             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4"><?php echo $error_message; ?></div>
-                        <?php endif; ?>
+                        <?php endif; 
+                        */
+                        ?>
 
                         <div class="overflow-x-auto">
                             <table class="w-full text-left" id="user-table">
@@ -209,13 +219,16 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
                                                     <button class="btn-edit text-blue-600"><i class="fas fa-edit"></i> Edit</button>
                                                     
                                                     <?php if ($u['email'] !== $logged_in_email): ?>
-                                                         <form method="POST" action="users.php" class="inline" onsubmit="return confirm('Yakin ingin menghapus user <?php echo addslashes($u['name']); ?>?');">
-                                                             <input type="hidden" name="action" value="delete">
-                                                             <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
-                                                             <button type="submit" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i> Hapus</button>
-                                                         </form>
+                                                        <button 
+                                                            type="button" 
+                                                            class="btn-delete text-red-500 hover:text-red-700" 
+                                                            data-id="<?php echo $u['id']; ?>"
+                                                            data-name="<?php echo htmlspecialchars($u['name']); ?>"
+                                                        >
+                                                            <i class="fas fa-trash"></i> Hapus
+                                                        </button>
                                                     <?php else: ?>
-                                                         <span class="text-gray-400 text-sm">Akun Anda</span>
+                                                        <span class="text-gray-400 text-sm">Akun Anda</span>
                                                     <?php endif; ?>
                                                 </td>
                                             </tr>
@@ -287,6 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Password wajib diisi hanya untuk user baru
         passwordInput.required = !isEdit; 
         passwordHint.classList.toggle('hidden', isEdit);
+        passwordInput.placeholder = isEdit ? "Password (Kosongkan jika tidak diubah)" : "Password";
 
         if (isEdit) {
             document.getElementById('user-name').value = data.name;
@@ -327,6 +341,83 @@ document.addEventListener('DOMContentLoaded', () => {
             
             row.style.display = (name.includes(searchTerm) || email.includes(searchTerm)) ? '' : 'none';
         });
+    });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    // ==========================================================
+    // 1. SweetAlert2 untuk Notifikasi Hasil CRUD (Redirect Status)
+    // ==========================================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const status = urlParams.get('status');
+    const msg = urlParams.get('msg');
+
+    if (status && msg) {
+        const decodedMsg = decodeURIComponent(msg);
+
+        // Panggil SweetAlert berdasarkan status
+        Swal.fire({
+            icon: status === 'success' ? 'success' : 'error',
+            title: status === 'success' ? 'Berhasil! 🎉' : 'Terjadi Kesalahan! 😥',
+            text: decodedMsg,
+            showConfirmButton: status === 'success' ? false : true,
+            timer: status === 'success' ? 1800 : null 
+        }).then(() => {
+            // Hapus parameter dari URL agar alert tidak muncul lagi saat refresh
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+        });
+    }
+
+    // ==========================================================
+    // 2. SweetAlert2 untuk Konfirmasi Delete
+    // ==========================================================
+    const userTableBody = document.getElementById('user-table-body');
+
+    // Menggunakan Event Delegation untuk tombol delete
+    userTableBody.addEventListener('click', (e) => {
+        const deleteButton = e.target.closest('.btn-delete');
+        
+        if (deleteButton) {
+            const userId = deleteButton.dataset.id;
+            const userName = deleteButton.dataset.name;
+
+            Swal.fire({
+                title: 'Yakin ingin menghapus?',
+                text: `User "${userName}" akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Ya, Hapus!',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Membuat form tersembunyi secara dinamis untuk men-submit DELETE request
+                    const tempForm = document.createElement('form');
+                    tempForm.method = 'POST';
+                    tempForm.action = 'users.php';
+                    
+                    // Input: action=delete
+                    const actionInput = document.createElement('input');
+                    actionInput.type = 'hidden';
+                    actionInput.name = 'action';
+                    actionInput.value = 'delete';
+                    
+                    // Input: user_id
+                    const idInput = document.createElement('input');
+                    idInput.type = 'hidden';
+                    idInput.name = 'user_id';
+                    idInput.value = userId;
+                    
+                    tempForm.appendChild(actionInput);
+                    tempForm.appendChild(idInput);
+                    
+                    document.body.appendChild(tempForm);
+                    tempForm.submit(); // Lanjutkan submit
+                }
+            });
+        }
     });
 });
 </script>

@@ -9,7 +9,7 @@ $total_dokter = $conn->query("SELECT COUNT(*) AS count FROM users WHERE role='do
 
 // Ambil data Diagnosa untuk Chart
 $diagnosa_data = [];
-$result = $conn->query("SELECT diagnosis, COUNT(*) as count FROM patients GROUP BY diagnosis ORDER BY count DESC LIMIT 5");
+$result = $conn->query("SELECT diagnosis, COUNT(*) as count FROM patients GROUP BY diagnosis ORDER BY count DESC LIMIT 10");
 while ($row = $result->fetch_assoc()) {
     $diagnosa_data[$row['diagnosis']] = (int)$row['count'];
 }
@@ -45,12 +45,12 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
     <div class="relative min-h-screen md:flex">
         <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
             <button id="hamburger-btn" class="focus:outline-none"><i class="fas fa-bars fa-lg"></i></button>
-            <h1 class="text-xl font-bold">PsiArsip</h1>
+            <h1 class="text-xl font-bold hidden md:flex">PsiArsip</h1>
             <div class="w-8"></div>
         </header>
 
         <aside id="sidebar" class="bg-blue-800 text-white w-64 flex-col fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 md:flex z-30">
-            <div class="hidden md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">PsiArsip</div>
+            <div class=" md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">PsiArsip</div>
             <nav class="flex-1 p-4 space-y-2">
                 <a href="dashboard.php" class="sidebar-item active flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-tachometer-alt w-6 text-center mr-3"></i>Dashboard</a>
                 <a href="arsip.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-folder-open w-6 text-center mr-3"></i>Arsip Pasien</a>
@@ -105,7 +105,7 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
                         </div>
                         <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md border border-gray-200">
                             <h3 class="text-xl font-semibold text-gray-900 mb-1">Distribusi Diagnosa</h3>
-                             <p class="text-gray-500 mb-4">5 diagnosa pasien teratas di klinik.</p>
+                             <p class="text-gray-500 mb-4">Diagnosa pasien teratas di klinik.</p>
                             <div class="relative h-80 w-full"><canvas id="diagnosaChart"></canvas></div>
                         </div>
                     </div>
