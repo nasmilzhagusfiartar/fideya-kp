@@ -44,6 +44,7 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
     // Logika Simpan (Tambah/Edit)
     if ($action === 'save_patient') {
         $patientId = $_POST['patient-id'] ?? null;
+        $nrm = $_POST['patient-nrm'] ?? null;
         $name = trim($_POST['patient-name']);
         $gender = $_POST['patient-gender'];
         $doctorId = $_POST['patient-doctor'];
@@ -122,9 +123,9 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
         if (!isset($error_message)) {
             if ($patientId) {
                 // UPDATE Pasien
-                $sql_parts = ["name=?", "gender=?", "diagnosis=?", "doctor_id=?", "patient_date=?"];
-                $types = "sssis";
-                $params = [$name, $gender, $diagnosis, $doctorId, $date];
+                $sql_parts = ["nrm=?", "name=?", "gender=?", "diagnosis=?", "doctor_id=?", "patient_date=?"];
+                $types = "ssssis";
+                $params = [$nrm, $name, $gender, $diagnosis, $doctorId, $date];
 
                 // Jika ada file baru diupload, $filePath akan terisi. Jika edit tanpa upload, $filePath berisi path lama.
                 $sql_parts[] = "file_path=?";
@@ -144,10 +145,10 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
             } else {
                 // Tambah Pasien Baru (INSERT)
                 // Jika tidak ada file yang dipilih, $filePath akan bernilai NULL (sesuai yang diinisialisasi)
-                $sql = "INSERT INTO patients (archive_id, name, gender, diagnosis, doctor_id, patient_date, file_path) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                $sql = "INSERT INTO patients (archive_id, nrm, name, gender, diagnosis, doctor_id, patient_date, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt = $conn->prepare($sql);
                 // Tipe data yang benar: i, s, s, s, i, s, s
-                if (!$stmt->bind_param("isssiss", $archiveId, $name, $gender, $diagnosis, $doctorId, $date, $filePath)) {
+                if (!$stmt->bind_param("issssiss", $archiveId, $nrm, $name, $gender, $diagnosis, $doctorId, $date, $filePath)) {
                     $error_message = "Gagal mengikat parameter insert: " . $stmt->error;
                 }
             }
@@ -321,6 +322,7 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
                         <div class="overflow-x-auto">
                             <table class="w-full text-left">
                                 <thead><tr class="border-b bg-gray-50">
+                                    <th class="p-4">NRM</th>                                    
                                     <th class="p-4">Nama</th>
                                     <th class="p-4">Gender</th>
                                     <th class="p-4">Diagnosa</th>
@@ -333,6 +335,7 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
                                     <?php if (!empty($patients)): ?>
                                         <?php foreach ($patients as $p): ?>
                                             <tr data-id="<?php echo $p['id']; ?>" data-doctor="<?php echo htmlspecialchars($p['doctor_name']); ?>">
+                                                <td class="p-4"><?php echo htmlspecialchars($p['nrm']); ?></td>
                                                 <td class="p-4"><?php echo htmlspecialchars($p['name']); ?></td>
                                                 <td class="p-4"><?php echo $p['gender']; ?></td>
                                                 <td class="p-4"><?php echo htmlspecialchars($p['diagnosis']); ?></td>
@@ -349,6 +352,7 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
                                                     <button 
                                                         class="btn-edit text-blue-600" 
                                                         data-id="<?php echo $p['id']; ?>"
+                                                        data-nrm="<?php echo htmlspecialchars($p['nrm']); ?>"
                                                         data-name="<?php echo htmlspecialchars($p['name']); ?>"
                                                         data-gender="<?php echo htmlspecialchars($p['gender']); ?>"
                                                         data-diagnosis="<?php echo htmlspecialchars($p['diagnosis']); ?>"
@@ -383,6 +387,8 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
                     <input type="hidden" name="action" value="save_patient">
                     <input type="hidden" id="patient-id" name="patient-id">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                        <input type="text" id="patient-nrm" name="patient-nrm" placeholder="NRM" class="p-3 border rounded-lg" required>
                         <input type="text" id="patient-name" name="patient-name" placeholder="Nama Pasien" class="p-3 border rounded-lg" required>
                         <select id="patient-gender" name="patient-gender" class="p-3 border rounded-lg" required>
                             <option value="">Pilih Gender</option>
@@ -441,6 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (isEdit) {
             document.getElementById('patient-id').value = data.id;
+            document.getElementById('patient-nrm').value = data.nrm;
             document.getElementById('patient-name').value = data.name;
             document.getElementById('patient-gender').value = data.gender;
             document.getElementById('patient-date').value = data.date;
@@ -475,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Ambil data dari data attributes
             const data = {
                 id: editButton.dataset.id,
+                nrm: editButton.dataset.nrm,
                 name: editButton.dataset.name,
                 gender: editButton.dataset.gender,
                 diagnosis: editButton.dataset.diagnosis,

@@ -28,7 +28,7 @@ if (!empty($search_term) && $conn) {
     
     if (!empty($keywords)) {
         // 2. Tentukan kolom yang akan dicari
-        $search_fields = ['p.name', 'p.diagnosis', 'd.name', 'a.archive_code'];
+        $search_fields = ['p.nrm','p.name', 'p.diagnosis', 'd.name', 'a.archive_code'];
         
         // Buat klausa WHERE untuk SETIAP kata kunci (harus cocok semua kata kunci)
         foreach ($keywords as $keyword) {
@@ -87,7 +87,7 @@ $offset = ($page - 1) * $limit; // Hitung offset yang benar
 if ($total_results > 0 && $conn) {
     $sql = "
         SELECT
-            p.id, p.name, p.gender, p.diagnosis, p.patient_date, p.file_path,
+            p.id, p.nrm, p.name, p.gender, p.diagnosis, p.patient_date, p.file_path,
             d.name AS doctor_name,
             a.archive_code
         FROM patients p
@@ -194,6 +194,7 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
                         <div class="overflow-x-auto">
                             <table class="w-full text-left">
                                 <thead><tr class="border-b bg-gray-50">
+                                    <th class="p-4">NRM</th>
                                     <th class="p-4">Nama Pasien</th>
                                     <th class="p-4">Kode Arsip</th>
                                     <th class="p-4">Diagnosa</th>
@@ -205,6 +206,7 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
                                     <?php if (!empty($patients)): ?>
                                         <?php foreach ($patients as $p): ?>
                                             <tr class="border-b hover:bg-gray-50">
+                                                <td class="p-4 font-medium"><?php echo htmlspecialchars($p['nrm']); ?></td>
                                                 <td class="p-4 font-medium"><?php echo htmlspecialchars($p['name']); ?></td>
                                                 <td class="p-4"><a href="detail_arsip.php?code=<?php echo urlencode($p['archive_code']); ?>" class="text-blue-600 hover:underline"><?php echo htmlspecialchars($p['archive_code']); ?></a></td>
                                                 <td class="p-4"><?php echo htmlspecialchars($p['diagnosis']); ?></td>
@@ -241,7 +243,7 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
                                     &laquo; Sebelumnya
                                 </a>
 
-                                <?php 
+                                <?php
                                 $start_page = max(1, $page - 2);
                                 $end_page = min($total_pages, $page + 2);
                                 
