@@ -139,7 +139,7 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pencarian Global - PsiArsip</title>
+    <title>Pencarian Pasien - Fideya</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -152,16 +152,16 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
     <div class="relative min-h-screen md:flex">
         <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
             <button id="hamburger-btn" class="focus:outline-none"><i class="fas fa-bars fa-lg"></i></button>
-            <h1 class="text-xl font-bold hidden md:flex">PsiArsip</h1>
+            <h1 class="text-xl font-bold hidden md:flex">Fideya</h1>
             <div class="w-8"></div>
         </header>
 
         <aside id="sidebar" class="bg-blue-800 text-white w-64 flex-col fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 md:flex z-30">
-            <div class=" md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">PsiArsip</div>
+            <div class=" md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">Fideya</div>
             <nav class="flex-1 p-4 space-y-2">
                 <a href="dashboard.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-tachometer-alt w-6 text-center mr-3"></i>Dashboard</a>
                 <a href="arsip.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-folder-open w-6 text-center mr-3"></i>Arsip Pasien</a>
-                <a href="pencarian.php" class="sidebar-item active flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-search w-6 text-center mr-3"></i>Pencarian Global</a>
+                <a href="pencarian.php" class="sidebar-item active flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-search w-6 text-center mr-3"></i>Pencarian Pasien</a>
                 <a href="users.php" id="menu-users" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200 admin-only" style="<?php echo isAdmin() ? '' : 'display: none;'; ?>"><i class="fas fa-users-cog w-6 text-center mr-3"></i>Manajemen User</a>
             </nav>
             <div class="p-4 border-t border-blue-700">
@@ -176,12 +176,12 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
         <div class="flex-1 flex flex-col overflow-hidden">
             <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-8">
                 <div class="container mx-auto">
-                    <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Pencarian Pasien Global</h1>
-                    <p class="text-gray-600 mt-1">Cari pasien berdasarkan Nama, Diagnosa, Dokter, atau Kode Arsip.</p>
+                    <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Pencarian Pasien</h1>
+                    <p class="text-gray-600 mt-1">Cari pasien berdasarkan NRM, Nama, Diagnosa, Dokter, atau Kode Arsip.</p>
 
                     <div class="bg-white p-6 rounded-xl shadow-md mt-8">
                         <form method="GET" action="pencarian.php" class="flex flex-col md:flex-row gap-4 mb-6">
-                            <input type="search" name="q" placeholder="Masukkan nama, diagnosa, atau kode arsip..." value="<?php echo htmlspecialchars($search_term); ?>" class="w-full border rounded-lg px-4 py-2 focus:ring-blue-500 focus:border-blue-500" required>
+                            <input type="search" name="q" placeholder="Masukkan nrm, nama, diagnosa, atau kode arsip..." value="<?php echo htmlspecialchars($search_term); ?>" class="w-full border rounded-lg px-4 py-2 focus:ring-blue-500 focus:border-blue-500" required>
                             <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-all md:w-auto"><i class="fas fa-search mr-2"></i>Cari</button>
                         </form>
 
@@ -257,7 +257,7 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
 
                                 if ($start_page > 1) { echo '<span class="px-3 py-1">...</span>'; }
 
-                                for ($i = $start_page; $i <= $end_page; $i++): 
+                                for ($i = $start_page; $i <= $end_page; $i++):
                                 ?>
                                     <a href="<?php echo $link_url($i); ?>" class="px-3 py-1 border rounded-lg <?php echo $i == $page ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 hover:bg-blue-50'; ?>">
                                         <?php echo $i; ?>

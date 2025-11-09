@@ -168,7 +168,7 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Arsip Pasien - PsiArsip</title>
+<title>Arsip Pasien - Fideya</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -185,16 +185,16 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
 
     <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
         <button id="hamburger-btn" class="focus:outline-none"><i class="fas fa-bars fa-lg"></i></button>
-        <h1 class="text-xl font-bold">PsiArsip</h1>
+        <h1 class="text-xl font-bold">Fideya</h1>
         <div class="w-8"></div>
     </header>
 
     <aside id="sidebar" class="bg-blue-800 text-white w-64 flex-col fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 md:flex z-30">
-        <div class="md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">PsiArsip</div>
+        <div class="md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">Fideya</div>
         <nav class="flex-1 p-4 space-y-2">
             <a href="dashboard.php" class="sidebar-item flex items-center p-3 rounded-lg"><i class="fas fa-tachometer-alt w-6 mr-3"></i>Dashboard</a>
             <a href="arsip.php" class="sidebar-item flex items-center p-3 rounded-lg active"><i class="fas fa-folder-open w-6 mr-3"></i>Arsip Pasien</a>
-            <a href="pencarian.php" class="sidebar-item flex items-center p-3 rounded-lg"><i class="fas fa-search w-6 mr-3"></i>Pencarian Global</a>
+            <a href="pencarian.php" class="sidebar-item flex items-center p-3 rounded-lg"><i class="fas fa-search w-6 mr-3"></i>Pencarian Pasien</a>
             <a href="users.php" class="sidebar-item flex items-center p-3 rounded-lg <?php echo isAdmin() ? '' : 'hidden'; ?>"><i class="fas fa-users-cog w-6 mr-3"></i>Manajemen User</a>
         </nav>
         <div class="p-4 border-t border-blue-700">
