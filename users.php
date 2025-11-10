@@ -1,7 +1,7 @@
 <?php
 // Pastikan file-file ini ada dan berfungsi
-include 'auth_check.php'; 
-include 'db_connect.php'; 
+include 'auth_check.php';
+include 'db_connect.php';
 
 // HANYA UNTUK ADMIN
 if (!isAdmin()) {
