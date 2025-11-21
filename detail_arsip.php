@@ -335,7 +335,15 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
                                     <?php if (!empty($patients)): ?>
                                         <?php foreach ($patients as $p): ?>
                                             <tr data-id="<?php echo $p['id']; ?>" data-doctor="<?php echo htmlspecialchars($p['doctor_name']); ?>">
-                                                <td class="p-4"><?php echo htmlspecialchars($p['nrm']); ?></td>
+                                                <td class="p-4 font-medium">
+                                                 <a 
+                                                     href="riwayat_kunjungan.php?nrm=<?php echo urlencode($p['nrm']); ?>&nama=<?php echo urlencode($p['name']); ?>"
+                                                        class="text-blue-600 hover:underline"
+                                                        >
+                                                    <?php echo htmlspecialchars($p['nrm']); ?>
+                                                 </a>
+                                                </td>
+
                                                 <td class="p-4"><?php echo htmlspecialchars($p['name']); ?></td>
                                                 <td class="p-4"><?php echo $p['gender']; ?></td>
                                                 <td class="p-4"><?php echo htmlspecialchars($p['diagnosis']); ?></td>
@@ -501,8 +509,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let visibleCount = 0;
 
         Array.from(patientTableBody.rows).forEach(row => {
-            const name = row.cells[0].textContent.toLowerCase();
-            const doctor = row.cells[3].textContent;
+        const name = row.cells[1].textContent.toLowerCase(); // kolom Nama
+        const doctor = row.cells[4].textContent.trim();       // kolom Dokter
             
             const matchesSearch = name.includes(searchTerm);
             const matchesDoctor = selectedDoctor === '' || doctor === selectedDoctor;

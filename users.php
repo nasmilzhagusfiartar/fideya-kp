@@ -1,9 +1,10 @@
 <?php
-// Pastikan file-file ini ada dan berfungsi
+// users.php - Manajemen user + auto-sync ke tabel doctors
+// Pastikan file auth_check.php dan db_connect.php tersedia dan benar
 include 'auth_check.php';
 include 'db_connect.php';
 
-// HANYA UNTUK ADMIN
+// Hanya admin yang boleh akses
 if (!isAdmin()) {
     header("Location: dashboard.php");
     exit;
@@ -11,143 +12,311 @@ if (!isAdmin()) {
 
 $error_message = '';
 $success_message = '';
-
-// Mendefinisikan email user yang sedang login dengan aman
 $logged_in_email = $_SESSION['user_email'] ?? null;
 
+// -----------------------
+// Helper kecil
+// -----------------------
+function safe_redirect_with_msg($url, $status, $msg) {
+    $location = $url . "?status=" . $status . "&msg=" . urlencode($msg);
+    header("Location: " . $location);
+    exit;
+}
 
-// 1. Logika CRUD User
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
+// -----------------------
+// HANDLE POST (CRUD)
+// -----------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-    $id = $_POST['user_id'] ?? null;
+    $id = isset($_POST['user_id']) && $_POST['user_id'] !== '' ? (int)$_POST['user_id'] : null;
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $role = $_POST['role'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    // Logika Hapus User
+    // -----------------------
+    // DELETE
+    // -----------------------
     if ($action === 'delete') {
-        // Pengecekan Keamanan Tambahan: Admin tidak bisa menghapus akunnya sendiri
-        $can_delete = true;
-        if ($logged_in_email && $id) {
-            // Gunakan prepared statement untuk mencegah SQL Injection
-            $check_stmt = $conn->prepare("SELECT email FROM users WHERE id=?");
-            $check_stmt->bind_param("i", $id);
-            $check_stmt->execute();
-            $check_result = $check_stmt->get_result();
-            $target_user = $check_result->fetch_assoc();
-            $check_stmt->close();
-
-            if ($target_user && $target_user['email'] === $logged_in_email) {
-                $error_message = "Anda tidak diizinkan menghapus akun Anda sendiri.";
-                $can_delete = false;
-            }
-        }
-
-        if ($can_delete) {
-            $stmt = $conn->prepare("DELETE FROM users WHERE id=?");
-            $stmt->bind_param("i", $id);
-            if ($stmt->execute()) {
-                $success_message = "User berhasil dihapus.";
-            } else {
-                $error_message = "Gagal menghapus user: " . $conn->error;
-            }
-            $stmt->close();
-        }
-    } 
-    // Logika Simpan (Tambah/Edit)
-    elseif ($action === 'save') {
-        // Validasi dasar
-        if (empty($name) || empty($email) || empty($role)) {
-            $error_message = "Nama, Email, dan Peran wajib diisi.";
-        }
-        
-        $is_new_user = empty($id);
-        $stmt = null; // Inisialisasi $stmt
-
-        if (!empty($error_message)) {
-            // Lewati proses DB jika ada error validasi
-        } elseif (!empty($password)) {
-            // GANTI MD5 dengan password_hash() untuk keamanan produksi
-            $password_hash = MD5($password); 
-            
-            if ($is_new_user) {
-                // INSERT
-                $sql = "INSERT INTO users (name, email, role, password_hash) VALUES (?, ?, ?, ?)";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("ssss", $name, $email, $role, $password_hash);
-            } else {
-                // UPDATE (dengan password baru)
-                $sql = "UPDATE users SET name=?, email=?, role=?, password_hash=? WHERE id=?";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("ssssi", $name, $email, $role, $password_hash, $id);
-            }
+        if (!$id) {
+            $error_message = "ID user tidak valid untuk penghapusan.";
         } else {
-            if ($is_new_user) {
-                $error_message = "Password wajib diisi untuk user baru.";
-            } else {
-                // UPDATE (tanpa password baru)
-                $sql = "UPDATE users SET name=?, email=?, role=? WHERE id=?";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("sssi", $name, $email, $role, $id);
-            }
-        }
+            // Cek target user (role + name)
+            $stmtRole = $conn->prepare("SELECT role, name, email FROM users WHERE id = ?");
+            $stmtRole->bind_param("i", $id);
+            $stmtRole->execute();
+            $resRole = $stmtRole->get_result();
+            $target = $resRole->fetch_assoc();
+            $stmtRole->close();
 
-        if (isset($stmt)) {
-            if ($stmt->execute()) {
-                $success_message = "User berhasil disimpan.";
+            if (!$target) {
+                $error_message = "User tidak ditemukan.";
             } else {
-                // MySQL Error 1062 = Duplicate entry (kemungkinan email)
-                if ($conn->errno == 1062) {
-                       $error_message = "Gagal menyimpan user: Email mungkin sudah digunakan.";
+                // Cegah admin menghapus akunnya sendiri
+                if ($target['email'] === $logged_in_email) {
+                    $error_message = "Anda tidak dapat menghapus akun Anda sendiri.";
                 } else {
-                       $error_message = "Gagal menyimpan user: " . $conn->error;
+                    // Hapus user
+                    $stmtDel = $conn->prepare("DELETE FROM users WHERE id = ?");
+                    $stmtDel->bind_param("i", $id);
+                    if ($stmtDel->execute()) {
+                        // Jika target adalah dokter, hapus dari tabel doctors *jika* tidak ada user dokter lain dengan nama yang sama
+                        if ($target['role'] === 'dokter') {
+                            // Cek apakah ada user dokter lain dengan nama yang sama
+                            $stmtChk = $conn->prepare("SELECT COUNT(*) AS cnt FROM users WHERE role = 'dokter' AND name = ? AND id <> ?");
+                            $stmtChk->bind_param("si", $target['name'], $id);
+                            $stmtChk->execute();
+                            $resChk = $stmtChk->get_result();
+                            $cntRow = $resChk->fetch_assoc();
+                            $stmtChk->close();
+
+                            if ((int)$cntRow['cnt'] === 0) {
+                                // Hapus dari doctors
+                                $stmtDelDoc = $conn->prepare("DELETE FROM doctors WHERE name = ?");
+                                $stmtDelDoc->bind_param("s", $target['name']);
+                                $stmtDelDoc->execute();
+                                $stmtDelDoc->close();
+                            }
+                        }
+
+                        $success_message = "User berhasil dihapus.";
+                    } else {
+                        $error_message = "Gagal menghapus user: " . $conn->error;
+                    }
+                    $stmtDel->close();
                 }
             }
-            $stmt->close();
         }
     }
-    
-    // Redirect untuk menghindari form resubmission dan menampilkan SweetAlert
+
+    // -----------------------
+    // SAVE (INSERT / UPDATE)
+    // -----------------------
+    elseif ($action === 'save') {
+        // Validasi dasar
+        if ($name === '' || $email === '' || $role === '') {
+            $error_message = "Nama, email, dan peran wajib diisi.";
+        } else {
+            $is_new_user = empty($id);
+
+            // Jika user baru, password wajib
+            if ($is_new_user && $password === '') {
+                $error_message = "Password wajib diisi untuk user baru.";
+            }
+        }
+
+        if (empty($error_message)) {
+            // Ambil data lama untuk update logic sinkron dokter (jika update)
+            $oldUser = null;
+            if (!$is_new_user) {
+                $stmtOld = $conn->prepare("SELECT id, name, email, role FROM users WHERE id = ?");
+                $stmtOld->bind_param("i", $id);
+                $stmtOld->execute();
+                $resOld = $stmtOld->get_result();
+                $oldUser = $resOld->fetch_assoc();
+                $stmtOld->close();
+
+                if (!$oldUser) {
+                    $error_message = "User yang akan diupdate tidak ditemukan.";
+                }
+            }
+        }
+
+        if (empty($error_message)) {
+            // Prepare hashed password jika ada
+            $password_hash = null;
+            if (!empty($password)) {
+                $password_hash = password_hash($password, PASSWORD_DEFAULT);
+            }
+
+            // -----------------------
+            // INSERT
+            // -----------------------
+            if ($is_new_user) {
+                $sql = "INSERT INTO users (name, email, role, password_hash) VALUES (?, ?, ?, ?)";
+                $stmt = $conn->prepare($sql);
+                if ($stmt === false) {
+                    $error_message = "Gagal menyiapkan statement insert: " . $conn->error;
+                } else {
+                    $stmt->bind_param("ssss", $name, $email, $role, $password_hash);
+                    if ($stmt->execute()) {
+                        $new_user_id = $stmt->insert_id;
+
+                        // Jika role dokter -> insert ke tabel doctors jika belum ada nama tersebut
+                        if ($role === 'dokter') {
+                            $stmtChkDoc = $conn->prepare("SELECT id FROM doctors WHERE name = ? LIMIT 1");
+                            $stmtChkDoc->bind_param("s", $name);
+                            $stmtChkDoc->execute();
+                            $resChkDoc = $stmtChkDoc->get_result();
+                            $existsDoc = $resChkDoc->fetch_assoc();
+                            $stmtChkDoc->close();
+
+                            if (!$existsDoc) {
+                                $stmtInsDoc = $conn->prepare("INSERT INTO doctors (name) VALUES (?)");
+                                $stmtInsDoc->bind_param("s", $name);
+                                $stmtInsDoc->execute();
+                                $stmtInsDoc->close();
+                            }
+                        }
+
+                        $success_message = "User baru berhasil dibuat.";
+                    } else {
+                        if ($conn->errno == 1062) {
+                            $error_message = "Email sudah digunakan.";
+                        } else {
+                            $error_message = "Gagal menyimpan user: " . $conn->error;
+                        }
+                    }
+                    $stmt->close();
+                }
+            }
+
+            // -----------------------
+            // UPDATE
+            // -----------------------
+            else {
+                // Update user (dengan atau tanpa password)
+                if ($password_hash !== null) {
+                    $sql = "UPDATE users SET name = ?, email = ?, role = ?, password_hash = ? WHERE id = ?";
+                    $stmt = $conn->prepare($sql);
+                    $stmt->bind_param("ssssi", $name, $email, $role, $password_hash, $id);
+                } else {
+                    $sql = "UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?";
+                    $stmt = $conn->prepare($sql);
+                    $stmt->bind_param("sssi", $name, $email, $role, $id);
+                }
+
+                if ($stmt === false) {
+                    $error_message = "Gagal menyiapkan statement update: " . $conn->error;
+                } else {
+                    if ($stmt->execute()) {
+
+                        // --- SYNC LOGIC FOR DOCTORS ---
+                        $oldRole = $oldUser['role'] ?? null;
+                        $oldName = $oldUser['name'] ?? null;
+                        $newRole = $role;
+                        $newName = $name;
+
+                        // Case A: old not dokter, new dokter -> add doctor if not exists
+                        if ($oldRole !== 'dokter' && $newRole === 'dokter') {
+                            $stmtChkDoc = $conn->prepare("SELECT id FROM doctors WHERE name = ? LIMIT 1");
+                            $stmtChkDoc->bind_param("s", $newName);
+                            $stmtChkDoc->execute();
+                            $resChkDoc = $stmtChkDoc->get_result();
+                            $existsDoc = $resChkDoc->fetch_assoc();
+                            $stmtChkDoc->close();
+
+                            if (!$existsDoc) {
+                                $stmtInsDoc = $conn->prepare("INSERT INTO doctors (name) VALUES (?)");
+                                $stmtInsDoc->bind_param("s", $newName);
+                                $stmtInsDoc->execute();
+                                $stmtInsDoc->close();
+                            }
+                        }
+
+                        // Case B: old dokter, new not dokter -> remove doctor if no other dokter uses same name
+                        if ($oldRole === 'dokter' && $newRole !== 'dokter') {
+                            // cek jumlah user dokter (excluding this id) with same oldName
+                            $stmtChk = $conn->prepare("SELECT COUNT(*) as cnt FROM users WHERE role = 'dokter' AND name = ? AND id <> ?");
+                            $stmtChk->bind_param("si", $oldName, $id);
+                            $stmtChk->execute();
+                            $resChk = $stmtChk->get_result();
+                            $cntRow = $resChk->fetch_assoc();
+                            $stmtChk->close();
+
+                            if ((int)$cntRow['cnt'] === 0) {
+                                // safe to delete doctor entry
+                                $stmtDelDoc = $conn->prepare("DELETE FROM doctors WHERE name = ?");
+                                $stmtDelDoc->bind_param("s", $oldName);
+                                $stmtDelDoc->execute();
+                                $stmtDelDoc->close();
+                            }
+                        }
+
+                        // Case C: both dokter and name changed -> update doctor name(s)
+                        if ($oldRole === 'dokter' && $newRole === 'dokter' && $oldName !== $newName) {
+                            // Update doctor rows with oldName to newName.
+                            // But be careful: if a doctor with newName already exists, we should avoid creating duplicates.
+                            $stmtExistsNew = $conn->prepare("SELECT id FROM doctors WHERE name = ? LIMIT 1");
+                            $stmtExistsNew->bind_param("s", $newName);
+                            $stmtExistsNew->execute();
+                            $resExistsNew = $stmtExistsNew->get_result();
+                            $existsNew = $resExistsNew->fetch_assoc();
+                            $stmtExistsNew->close();
+
+                            if ($existsNew) {
+                                // If a doctor with newName exists, delete the oldName entry only if no other users point to it.
+                                $stmtChkUsers = $conn->prepare("SELECT COUNT(*) as cnt FROM users WHERE role='dokter' AND name = ?");
+                                $stmtChkUsers->bind_param("s", $oldName);
+                                $stmtChkUsers->execute();
+                                $resChkUsers = $stmtChkUsers->get_result();
+                                $cntOld = $resChkUsers->fetch_assoc();
+                                $stmtChkUsers->close();
+
+                                if ((int)$cntOld['cnt'] === 0) {
+                                    $stmtDelOld = $conn->prepare("DELETE FROM doctors WHERE name = ?");
+                                    $stmtDelOld->bind_param("s", $oldName);
+                                    $stmtDelOld->execute();
+                                    $stmtDelOld->close();
+                                }
+                            } else {
+                                // Rename the doctor entry
+                                $stmtUpdateDoc = $conn->prepare("UPDATE doctors SET name = ? WHERE name = ?");
+                                $stmtUpdateDoc->bind_param("ss", $newName, $oldName);
+                                $stmtUpdateDoc->execute();
+                                $stmtUpdateDoc->close();
+                            }
+                        }
+
+                        $success_message = "User berhasil diperbarui.";
+                    } else {
+                        if ($conn->errno == 1062) {
+                            $error_message = "Email sudah digunakan.";
+                        } else {
+                            $error_message = "Gagal mengupdate user: " . $conn->error;
+                        }
+                    }
+                    $stmt->close();
+                }
+            } // end update/insert branch
+        } // end if no validation error
+    } // end save
+    // -----------------------
+    // Redirect with message (avoid resubmission)
+    // -----------------------
     if (!empty($success_message) || !empty($error_message)) {
         $status = empty($success_message) ? 'error' : 'success';
         $msg = empty($success_message) ? $error_message : $success_message;
-        
-        // Penting: Tutup koneksi sebelum redirect jika tidak diperlukan lagi
         if (isset($conn)) $conn->close();
-        
-        header("Location: users.php?status=" . $status . "&msg=" . urlencode($msg));
-        exit;
+        safe_redirect_with_msg('users.php', $status, $msg);
     }
-}
+} // end POST handling
 
-// Ambil pesan dari URL (setelah redirect) - Notifikasi SweetAlert akan mengambil ini
-// Note: Karena SweetAlert akan menangani tampilan pesan ini, variabel $success_message/$error_message 
-// di sini tidak akan dipakai untuk div alert default. Namun, ini tetap perlu untuk logika PHP.
-// Kita akan hapus div alert di HTML untuk menghindari duplikasi.
-
-// 2. Ambil Daftar User dari Database
+// -----------------------
+// GET: fetch users for listing
+// -----------------------
 $users = [];
-// Pastikan koneksi dibuka kembali jika ditutup sebelumnya (hanya jika ada logika di atas yang menutup)
-if (!isset($conn) || $conn->ping() === false) {
-    include 'db_connect.php'; 
+if (!isset($conn) || $conn->connect_error) {
+    include 'db_connect.php';
 }
-$result = $conn->query("SELECT id, name, email, role FROM users ORDER BY role, name");
-while ($row = $result->fetch_assoc()) {
-    $users[] = $row;
+$res = $conn->query("SELECT id, name, email, role FROM users ORDER BY role, name");
+if ($res) {
+    while ($row = $res->fetch_assoc()) {
+        $users[] = $row;
+    }
+    $res->free_result();
 }
 $conn->close();
 
-// Variabel untuk tampilan sidebar
-// Asumsi variabel-variabel ini didefinisikan di auth_check.php
-$role_display = ucfirst($current_user_role ?? 'Guest'); 
+// Display variables
+$role_display = ucfirst($current_user_role ?? 'Guest');
 $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Manajemen User - Fideya</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -160,145 +329,138 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans">
-    <div class="relative min-h-screen md:flex">
-        <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
-            <button id="hamburger-btn" class="focus:outline-none"><i class="fas fa-bars fa-lg"></i></button>
-            <h1 class="text-xl font-bold hidden md:flex">Fideya</h1>
-            <div class="w-8"></div>
-        </header>
+<div class="relative min-h-screen md:flex">
+    <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
+        <button id="hamburger-btn" class="focus:outline-none"><i class="fas fa-bars fa-lg"></i></button>
+        <h1 class="text-xl font-bold hidden md:flex">Fideya</h1>
+        <div class="w-8"></div>
+    </header>
 
-        <aside id="sidebar" class="bg-blue-800 text-white w-64 flex-col fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 md:flex z-30">
-            <div class=" md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">Fideya</div>
-            <nav class="flex-1 p-4 space-y-2">
-                <a href="dashboard.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-tachometer-alt w-6 text-center mr-3"></i>Dashboard</a>
-                <a href="arsip.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-folder-open w-6 text-center mr-3"></i>Arsip Pasien</a>
-                <a href="pencarian.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-search w-6 text-center mr-3"></i>Pencarian Pasien</a>
-                <a href="users.php" id="menu-users" class="sidebar-item active flex items-center p-3 rounded-lg transition duration-200 admin-only"><i class="fas fa-users-cog w-6 text-center mr-3"></i>Manajemen User</a>
-            </nav>
-            <div class="p-4 border-t border-blue-700">
-                <div class="flex items-center mb-4">
-                    <div id="user-avatar" class="user-avatar w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl mr-3"><?php echo $initial_char; ?></div>
-                    <span id="user-role-display" class="font-semibold"><?php echo $role_display; ?></span>
-                </div>
-                <a href="?logout=true" id="logout-button" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-sign-out-alt w-6 text-center mr-3"></i>Keluar</a>
+    <aside id="sidebar" class="bg-blue-800 text-white w-64 flex-col fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 md:flex z-30">
+        <div class=" md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">Fideya</div>
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="dashboard.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-tachometer-alt w-6 text-center mr-3"></i>Dashboard</a>
+            <a href="arsip.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-folder-open w-6 text-center mr-3"></i>Arsip Pasien</a>
+            <a href="pencarian.php" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-search w-6 text-center mr-3"></i>Pencarian Pasien</a>
+            <a href="users.php" id="menu-users" class="sidebar-item active flex items-center p-3 rounded-lg transition duration-200 admin-only"><i class="fas fa-users-cog w-6 text-center mr-3"></i>Manajemen User</a>
+        </nav>
+        <div class="p-4 border-t border-blue-700">
+            <div class="flex items-center mb-4">
+                <div id="user-avatar" class="user-avatar w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl mr-3"><?php echo $initial_char; ?></div>
+                <span id="user-role-display" class="font-semibold"><?php echo $role_display; ?></span>
             </div>
-        </aside>
-
-        <div class="flex-1 flex flex-col overflow-hidden">
-            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-8">
-                <div class="container mx-auto">
-                    <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Manajemen User</h1>
-                    <p class="text-gray-600 mt-1">Kelola akun Admin, Dokter, dan Owner klinik.</p>
-
-                    <div class="bg-white p-6 rounded-xl shadow-md mt-8">
-                        <div class="flex justify-between items-center mb-6">
-                            <button id="btn-add-user" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-all"><i class="fas fa-user-plus mr-2"></i>Tambah User</button>
-                            <input type="text" id="search-user" placeholder="Cari nama atau email..." class="w-1/3 border rounded-lg px-4 py-2">
-                        </div>
-                        
-                        <?php 
-                        /* if ($success_message): ?>
-                            <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4"><?php echo $success_message; ?></div>
-                        <?php elseif ($error_message): ?>
-                            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4"><?php echo $error_message; ?></div>
-                        <?php endif; 
-                        */
-                        ?>
-
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left" id="user-table">
-                                <thead><tr class="border-b bg-gray-50"><th class="p-4">Nama</th><th class="p-4">Email</th><th class="p-4">Peran</th><th class="p-4 text-center">Aksi</th></tr></thead>
-                                <tbody id="user-table-body">
-                                    <?php if (!empty($users)): ?>
-                                        <?php foreach ($users as $u): ?>
-                                            <tr class="border-b hover:bg-gray-50" data-id="<?php echo $u['id']; ?>" data-name="<?php echo htmlspecialchars($u['name']); ?>" data-email="<?php echo htmlspecialchars($u['email']); ?>" data-role="<?php echo htmlspecialchars($u['role']); ?>">
-                                                <td class="p-4 font-medium"><?php echo htmlspecialchars($u['name']); ?></td>
-                                                <td class="p-4"><?php echo htmlspecialchars($u['email']); ?></td>
-                                                <td class="p-4"><span class="px-3 py-1 text-sm rounded-full <?php echo $u['role'] == 'admin' ? 'bg-red-100 text-red-800' : ($u['role'] == 'dokter' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'); ?>"><?php echo ucfirst($u['role']); ?></span></td>
-                                                <td class="p-4 text-center space-x-2">
-                                                    <button class="btn-edit text-blue-600"><i class="fas fa-edit"></i> Edit</button>
-                                                    
-                                                    <?php if ($u['email'] !== $logged_in_email): ?>
-                                                        <button 
-                                                            type="button" 
-                                                            class="btn-delete text-red-500 hover:text-red-700" 
-                                                            data-id="<?php echo $u['id']; ?>"
-                                                            data-name="<?php echo htmlspecialchars($u['name']); ?>"
-                                                        >
-                                                            <i class="fas fa-trash"></i> Hapus
-                                                        </button>
-                                                    <?php else: ?>
-                                                        <span class="text-gray-400 text-sm">Akun Anda</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr><td colspan="4" class="p-4 text-center text-gray-500">Belum ada data user.</td></tr>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </main>
+            <a href="?logout=true" id="logout-button" class="sidebar-item flex items-center p-3 rounded-lg transition duration-200"><i class="fas fa-sign-out-alt w-6 text-center mr-3"></i>Keluar</a>
         </div>
-        <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-20 hidden"></div>
+    </aside>
 
-        <div id="user-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
-                <h2 id="modal-title" class="text-2xl font-bold mb-6">Tambah User Baru</h2>
-                <form id="user-form" method="POST" action="users.php">
-                    <input type="hidden" name="action" value="save">
-                    <input type="hidden" id="user-id" name="user_id">
-                    <div class="space-y-4">
-                        <input type="text" id="user-name" name="name" placeholder="Nama Lengkap" class="p-3 border rounded-lg w-full" required>
-                        <input type="email" id="user-email" name="email" placeholder="Email" class="p-3 border rounded-lg w-full" required>
-                        <select id="user-role" name="role" class="p-3 border rounded-lg w-full" required>
-                            <option value="">Pilih Peran</option>
-                            <option value="admin">Admin</option>
-                            <option value="dokter">Dokter</option>
-                            <option value="owner">Owner</option>
-                        </select>
-                        <input type="password" id="user-password" name="password" placeholder="Password (Kosongkan jika tidak diubah)" class="p-3 border rounded-lg w-full" required>
-                        <p id="password-hint" class="text-sm text-red-500 hidden">Password wajib diisi untuk user baru.</p>
+    <div class="flex-1 flex flex-col overflow-hidden">
+        <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-8">
+            <div class="container mx-auto">
+                <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Manajemen User</h1>
+                <p class="text-gray-600 mt-1">Kelola Admin, Dokter, dan Owner.</p>
+
+                <div class="bg-white p-6 rounded-xl shadow-md mt-8">
+                    <div class="flex justify-between items-center mb-6">
+                        <button id="btn-add-user" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-all"><i class="fas fa-user-plus mr-2"></i>Tambah User</button>
+                        <input type="text" id="search-user" placeholder="Cari nama atau email..." class="w-1/3 border rounded-lg px-4 py-2">
                     </div>
-                    <div class="flex justify-end gap-4 mt-8"><button type="button" id="btn-cancel" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Batal</button><button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Simpan User</button></div>
-                </form>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left" id="user-table">
+                            <thead>
+                                <tr class="border-b bg-gray-50">
+                                    <th class="p-4">Nama</th>
+                                    <th class="p-4">Email</th>
+                                    <th class="p-4">Peran</th>
+                                    <th class="p-4 text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-table-body">
+                                <?php if (!empty($users)): ?>
+                                    <?php foreach ($users as $u): ?>
+                                        <tr class="border-b hover:bg-gray-50" data-id="<?php echo $u['id']; ?>" data-name="<?php echo htmlspecialchars($u['name']); ?>" data-email="<?php echo htmlspecialchars($u['email']); ?>" data-role="<?php echo htmlspecialchars($u['role']); ?>">
+                                            <td class="p-4 font-medium"><?php echo htmlspecialchars($u['name']); ?></td>
+                                            <td class="p-4"><?php echo htmlspecialchars($u['email']); ?></td>
+                                            <td class="p-4"><span class="px-3 py-1 text-sm rounded-full <?php echo $u['role'] == 'admin' ? 'bg-red-100 text-red-800' : ($u['role'] == 'dokter' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'); ?>"><?php echo ucfirst($u['role']); ?></span></td>
+                                            <td class="p-4 text-center space-x-2">
+                                                <button class="btn-edit text-blue-600"><i class="fas fa-edit"></i> Edit</button>
+                                                <?php if ($u['email'] !== $logged_in_email): ?>
+                                                    <button type="button" class="btn-delete text-red-500 hover:text-red-700" data-id="<?php echo $u['id']; ?>" data-name="<?php echo htmlspecialchars($u['name']); ?>"><i class="fas fa-trash"></i> Hapus</button>
+                                                <?php else: ?>
+                                                    <span class="text-gray-400 text-sm">Akun Anda</span>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <tr><td colspan="4" class="p-4 text-center text-gray-500">Belum ada data user.</td></tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
+        </main>
+    </div>
+
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-20 hidden"></div>
+
+    <!-- Modal User -->
+    <div id="user-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" style="display:none;">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
+            <h2 id="modal-title" class="text-2xl font-bold mb-6">Tambah User Baru</h2>
+            <form id="user-form" method="POST" action="users.php">
+                <input type="hidden" name="action" value="save">
+                <input type="hidden" id="user-id" name="user_id">
+                <div class="space-y-4">
+                    <input type="text" id="user-name" name="name" placeholder="Nama Lengkap" class="p-3 border rounded-lg w-full" required>
+                    <input type="email" id="user-email" name="email" placeholder="Email" class="p-3 border rounded-lg w-full" required>
+                    <select id="user-role" name="role" class="p-3 border rounded-lg w-full" required>
+                        <option value="">Pilih Peran</option>
+                        <option value="admin">Admin</option>
+                        <option value="dokter">Dokter</option>
+                        <option value="owner">Owner</option>
+                    </select>
+                    <input type="password" id="user-password" name="password" placeholder="Password (Kosongkan jika tidak diubah)" class="p-3 border rounded-lg w-full" required>
+                    <p id="password-hint" class="text-sm text-red-500 hidden">Password wajib diisi untuk user baru.</p>
+                </div>
+                <div class="flex justify-end gap-4 mt-8">
+                    <button type="button" id="btn-cancel" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Batal</button>
+                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Simpan User</button>
+                </div>
+            </form>
         </div>
     </div>
 
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // Logika Sidebar Mobile
+    // Mobile sidebar
     const hamburgerBtn = document.getElementById('hamburger-btn');
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
-    const toggleSidebar = () => {
-        sidebar.classList.toggle('-translate-x-full');
-        overlay.classList.toggle('hidden');
-    };
+    const toggleSidebar = () => { sidebar.classList.toggle('-translate-x-full'); overlay.classList.toggle('hidden'); };
     if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
     if (overlay) overlay.addEventListener('click', toggleSidebar);
 
+    // Modal logic
     const userModal = document.getElementById('user-modal');
     const btnAddUser = document.getElementById('btn-add-user');
-    const btnCancel = userModal.querySelector('#btn-cancel');
+    const btnCancel = document.getElementById('btn-cancel');
     const modalTitle = document.getElementById('modal-title');
     const passwordInput = document.getElementById('user-password');
     const passwordHint = document.getElementById('password-hint');
     const userIdInput = document.getElementById('user-id');
+    const userForm = document.getElementById('user-form');
     const userTableBody = document.getElementById('user-table-body');
     const searchInput = document.getElementById('search-user');
 
     const showModal = (isEdit = false, data = {}) => {
         modalTitle.textContent = isEdit ? 'Edit User' : 'Tambah User Baru';
-        document.getElementById('user-form').reset();
-        
+        userForm.reset();
         userIdInput.value = isEdit ? data.id : '';
-        // Password wajib diisi hanya untuk user baru
-        passwordInput.required = !isEdit; 
+        passwordInput.required = !isEdit;
         passwordHint.classList.toggle('hidden', isEdit);
         passwordInput.placeholder = isEdit ? "Password (Kosongkan jika tidak diubah)" : "Password";
 
@@ -307,17 +469,16 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('user-email').value = data.email;
             document.getElementById('user-role').value = data.role;
         }
-        
         userModal.style.display = 'flex';
     };
 
     const hideModal = () => { userModal.style.display = 'none'; };
 
-    btnAddUser.addEventListener('click', () => showModal(false));
-    btnCancel.addEventListener('click', hideModal);
+    if (btnAddUser) btnAddUser.addEventListener('click', () => showModal(false));
+    if (btnCancel) btnCancel.addEventListener('click', hideModal);
     window.addEventListener('click', (e) => { if (e.target === userModal) hideModal(); });
 
-    // Event Listener untuk Edit (menggunakan delegation)
+    // Edit button
     userTableBody.addEventListener('click', (e) => {
         const editButton = e.target.closest('.btn-edit');
         if (editButton) {
@@ -332,59 +493,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Search Filter (Client-side)
-    searchInput.addEventListener('input', () => {
-        const searchTerm = searchInput.value.toLowerCase();
-        Array.from(userTableBody.rows).forEach(row => {
-            const name = row.cells[0].textContent.toLowerCase();
-            const email = row.cells[1].textContent.toLowerCase();
-            
-            row.style.display = (name.includes(searchTerm) || email.includes(searchTerm)) ? '' : 'none';
-        });
-    });
-});
-
-document.addEventListener('DOMContentLoaded', () => {
-    // ==========================================================
-    // 1. SweetAlert2 untuk Notifikasi Hasil CRUD (Redirect Status)
-    // ==========================================================
-    const urlParams = new URLSearchParams(window.location.search);
-    const status = urlParams.get('status');
-    const msg = urlParams.get('msg');
-
-    if (status && msg) {
-        const decodedMsg = decodeURIComponent(msg);
-
-        // Panggil SweetAlert berdasarkan status
-        Swal.fire({
-            icon: status === 'success' ? 'success' : 'error',
-            title: status === 'success' ? 'Berhasil! 🎉' : 'Terjadi Kesalahan! 😥',
-            text: decodedMsg,
-            showConfirmButton: status === 'success' ? false : true,
-            timer: status === 'success' ? 1800 : null 
-        }).then(() => {
-            // Hapus parameter dari URL agar alert tidak muncul lagi saat refresh
-            const cleanUrl = window.location.pathname;
-            window.history.replaceState({}, document.title, cleanUrl);
-        });
-    }
-
-    // ==========================================================
-    // 2. SweetAlert2 untuk Konfirmasi Delete
-    // ==========================================================
-    const userTableBody = document.getElementById('user-table-body');
-
-    // Menggunakan Event Delegation untuk tombol delete
+    // Delete with sweetalert2
     userTableBody.addEventListener('click', (e) => {
-        const deleteButton = e.target.closest('.btn-delete');
-        
-        if (deleteButton) {
-            const userId = deleteButton.dataset.id;
-            const userName = deleteButton.dataset.name;
-
+        const delBtn = e.target.closest('.btn-delete');
+        if (delBtn) {
+            const userId = delBtn.dataset.id;
+            const userName = delBtn.dataset.name;
             Swal.fire({
-                title: 'Yakin ingin menghapus?',
-                text: `User "${userName}" akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.`,
+                title: `Hapus "${userName}"?`,
+                text: "Aksi ini tidak dapat dibatalkan.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
@@ -393,32 +510,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 cancelButtonText: 'Batal'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    // Membuat form tersembunyi secara dinamis untuk men-submit DELETE request
-                    const tempForm = document.createElement('form');
-                    tempForm.method = 'POST';
-                    tempForm.action = 'users.php';
-                    
-                    // Input: action=delete
-                    const actionInput = document.createElement('input');
-                    actionInput.type = 'hidden';
-                    actionInput.name = 'action';
-                    actionInput.value = 'delete';
-                    
-                    // Input: user_id
-                    const idInput = document.createElement('input');
-                    idInput.type = 'hidden';
-                    idInput.name = 'user_id';
-                    idInput.value = userId;
-                    
-                    tempForm.appendChild(actionInput);
-                    tempForm.appendChild(idInput);
-                    
-                    document.body.appendChild(tempForm);
-                    tempForm.submit(); // Lanjutkan submit
+                    // submit form POST untuk delete
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = 'users.php';
+                    const act = document.createElement('input'); act.type = 'hidden'; act.name = 'action'; act.value = 'delete';
+                    const idInput = document.createElement('input'); idInput.type = 'hidden'; idInput.name = 'user_id'; idInput.value = userId;
+                    form.appendChild(act); form.appendChild(idInput);
+                    document.body.appendChild(form);
+                    form.submit();
                 }
             });
         }
     });
+
+    // Search filter
+    searchInput.addEventListener('input', () => {
+        const q = searchInput.value.toLowerCase();
+        Array.from(userTableBody.rows).forEach(row => {
+            const name = row.cells[0].textContent.toLowerCase();
+            const email = row.cells[1].textContent.toLowerCase();
+            row.style.display = (name.includes(q) || email.includes(q)) ? '' : 'none';
+        });
+    });
+
+    // Status messages from redirect
+    const urlParams = new URLSearchParams(window.location.search);
+    const status = urlParams.get('status');
+    const msg = urlParams.get('msg');
+    if (status && msg) {
+        Swal.fire({
+            icon: status === 'success' ? 'success' : 'error',
+            title: status === 'success' ? 'Berhasil' : 'Gagal',
+            text: decodeURIComponent(msg),
+            timer: status === 'success' ? 1600 : null,
+            showConfirmButton: status === 'success' ? false : true
+        }).then(() => {
+            // remove query parameters
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+        });
+    }
 });
 </script>
 </body>

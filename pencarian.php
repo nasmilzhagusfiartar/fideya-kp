@@ -206,7 +206,13 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
                                     <?php if (!empty($patients)): ?>
                                         <?php foreach ($patients as $p): ?>
                                             <tr class="border-b hover:bg-gray-50">
-                                                <td class="p-4 font-medium"><?php echo htmlspecialchars($p['nrm']); ?></td>
+                                                <td class="p-4 font-medium">
+                                                    <a href="riwayat_kunjungan.php?nrm=<?php echo urlencode($p['nrm']); ?>&nama=<?php echo urlencode($p['name']); ?>"
+                                                        class="text-blue-600 hover:underline">
+                                                        <?php echo htmlspecialchars($p['nrm']); ?>
+                                                    </a>
+                                                </td>
+
                                                 <td class="p-4 font-medium"><?php echo htmlspecialchars($p['name']); ?></td>
                                                 <td class="p-4"><a href="detail_arsip.php?code=<?php echo urlencode($p['archive_code']); ?>" class="text-blue-600 hover:underline"><?php echo htmlspecialchars($p['archive_code']); ?></a></td>
                                                 <td class="p-4"><?php echo htmlspecialchars($p['diagnosis']); ?></td>
