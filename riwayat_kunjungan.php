@@ -115,89 +115,61 @@ $initial_char = strtoupper(substr($current_user_name, 0, 1));
                     <h2 class="text-2xl font-bold mb-4">Detail Kunjungan</h2>
 
                     <div class="overflow-x-auto">
-                        <table class="w-full text-left">
-                            <thead>
-                            <tr class="border-b bg-gray-50">
-                                <th class="p-4">NRM</th>
-                                <th class="p-4">Nama</th>
-                                <th class="p-4">Gender</th>
-                                <th class="p-4">Diagnosis</th>
-                                <th class="p-4">Dokter</th>
-                                <th class="p-4">Tanggal</th>
-                                <th class="p-4">File</th>
+    <table class="w-full text-left">
+        <thead>
+        <tr class="border-b bg-gray-50">
+            <th class="p-4">NRM</th>
+            <th class="p-4">Nama</th>
+            <th class="p-4">Gender</th>
+            <th class="p-4">Diagnosis</th>
+            <th class="p-4">Dokter</th>
+            <th class="p-4">Tanggal</th>
+            <th class="p-4">File</th>
+        </tr>
+        </thead>
 
-                                <?php if (isAdmin()): ?>
-                                    <th class="p-4 text-center">Aksi</th>
-                                <?php endif; ?>
-                            </tr>
-                            </thead>
+        <tbody>
 
-                            <tbody>
+        <?php if ($riwayat->num_rows > 0): ?>
+            <?php while ($p = $riwayat->fetch_assoc()): ?>
 
-                            <?php if ($riwayat->num_rows > 0): ?>
-                                <?php while ($p = $riwayat->fetch_assoc()): ?>
+                <tr class="border-b hover:bg-gray-50">
 
-                                    <tr class="border-b hover:bg-gray-50">
+                    <td class="p-4"><?= htmlspecialchars($p['nrm']); ?></td>
+                    <td class="p-4"><?= htmlspecialchars($p['name']); ?></td>
+                    <td class="p-4"><?= htmlspecialchars($p['gender']); ?></td>
+                    <td class="p-4"><?= htmlspecialchars($p['diagnosis']); ?></td>
+                    <td class="p-4"><?= htmlspecialchars($p['doctor_name']); ?></td>
+                    <td class="p-4"><?= date('Y-m-d', strtotime($p['patient_date'])); ?></td>
 
-                                        <td class="p-4"><?= htmlspecialchars($p['nrm']); ?></td>
-                                        <td class="p-4"><?= htmlspecialchars($p['name']); ?></td>
-                                        <td class="p-4"><?= htmlspecialchars($p['gender']); ?></td>
-                                        <td class="p-4"><?= htmlspecialchars($p['diagnosis']); ?></td>
-                                        <td class="p-4"><?= htmlspecialchars($p['doctor_name']); ?></td>
-                                        <td class="p-4"><?= date('Y-m-d', strtotime($p['patient_date'])); ?></td>
+                    <td class="p-4">
+                        <?php if ($p['file_path']): ?>
+                            <a href="<?= htmlspecialchars($p['file_path']); ?>" 
+                               target="_blank"
+                               class="text-blue-600 hover:underline">Lihat File</a>
+                        <?php else: ?>
+                            -
+                        <?php endif; ?>
+                    </td>
 
-                                        <td class="p-4">
-                                            <?php if ($p['file_path']): ?>
-                                                <a href="<?= htmlspecialchars($p['file_path']); ?>" 
-                                                   target="_blank"
-                                                   class="text-blue-600 hover:underline">Lihat File</a>
-                                            <?php else: ?>
-                                                -
-                                            <?php endif; ?>
-                                        </td>
+                </tr>
 
-                                        <!-- Aksi untuk admin saja -->
-                                        <?php if (isAdmin()): ?>
-                                            <td class="p-4 text-center space-x-2">
+            <?php endwhile; ?>
+        <?php else: ?>
 
-                                                <button 
-                                                    class="btn-edit text-blue-600"
-                                                    data-id="<?= $p['id']; ?>"
-                                                    data-nrm="<?= htmlspecialchars($p['nrm']); ?>"
-                                                    data-name="<?= htmlspecialchars($p['name']); ?>"
-                                                    data-gender="<?= htmlspecialchars($p['gender']); ?>"
-                                                    data-diagnosis="<?= htmlspecialchars($p['diagnosis']); ?>"
-                                                    data-doctor-id="<?= htmlspecialchars($p['doctor_id']); ?>"
-                                                    data-date="<?= date('Y-m-d', strtotime($p['patient_date'])); ?>"
-                                                    data-filepath="<?= htmlspecialchars($p['file_path']); ?>">
-                                                    <i class="fas fa-edit"></i>
-                                                </button>
+            <tr>
+                <td colspan="7"
+                    class="p-4 text-center text-gray-500">
+                    Tidak ada riwayat kunjungan.
+                </td>
+            </tr>
 
-                                                <a href="?nrm=<?= urlencode($nrm); ?>&delete_id=<?= $p['id']; ?>"
-                                                   class="btn-delete text-red-500">
-                                                    <i class="fas fa-trash"></i>
-                                                </a>
+        <?php endif; ?>
 
-                                            </td>
-                                        <?php endif; ?>
+        </tbody>
+    </table>
+</div>
 
-                                    </tr>
-
-                                <?php endwhile; ?>
-                            <?php else: ?>
-
-                                <tr>
-                                    <td colspan="<?= isAdmin() ? '8' : '7'; ?>"
-                                        class="p-4 text-center text-gray-500">
-                                        Tidak ada riwayat kunjungan.
-                                    </td>
-                                </tr>
-
-                            <?php endif; ?>
-
-                            </tbody>
-                        </table>
-                    </div>
 
                 </div>
 
