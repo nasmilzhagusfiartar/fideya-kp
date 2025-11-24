@@ -6,7 +6,7 @@ include 'db_connect.php';
 $alert = $_SESSION['alert'] ?? null;
 unset($_SESSION['alert']);
 
-// Jika sudah login dan tidak sedang memunculkan alert sukses
+// Jika sudah login dan tidak ada alert sukses
 if (isset($_SESSION['user_role']) && !$alert) {
     header("Location: dashboard.php");
     exit;
@@ -15,11 +15,10 @@ if (isset($_SESSION['user_role']) && !$alert) {
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $email = trim($_POST['email']);
     $password = $_POST['password'];
-    $role = $_POST['role_selector'];
 
-    // Ambil user berdasarkan email + role
-    $stmt = $conn->prepare("SELECT id, name, role, password_hash FROM users WHERE email = ? AND role = ?");
-    $stmt->bind_param("ss", $email, $role);
+    // Ambil user berdasarkan email saja (role otomatis dari DB)
+    $stmt = $conn->prepare("SELECT id, name, role, password_hash FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
     $stmt->execute();
     $result = $stmt->get_result();
 
@@ -27,21 +26,20 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if ($result->num_rows === 1) {
         $user = $result->fetch_assoc();
         $stored_hash = $user['password_hash'];
-
         $login_valid = false;
 
-        // CASE 1: bcrypt (hash modern)
+        // CASE 1: bcrypt
         if (str_starts_with($stored_hash, '$2y$') || str_starts_with($stored_hash, '$2a$')) {
             if (password_verify($password, $stored_hash)) {
                 $login_valid = true;
             }
         }
 
-        // CASE 2: hash lama MD5
+        // CASE 2: MD5 lama
         elseif (md5($password) === $stored_hash) {
             $login_valid = true;
 
-            // Upgrade password otomatis ke bcrypt
+            // Upgrade hash ke bcrypt
             $new_hash = password_hash($password, PASSWORD_DEFAULT);
             $stmtUp = $conn->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
             $stmtUp->bind_param("si", $new_hash, $user['id']);
@@ -49,9 +47,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $stmtUp->close();
         }
 
-        // Jika login berhasil
+        // Jika login sukses
         if ($login_valid) {
-            $_SESSION['user_role'] = $user['role'];
+            $_SESSION['user_role'] = $user['role']; // role otomatis
             $_SESSION['user_name'] = $user['name'];
 
             $_SESSION['alert'] = [
@@ -70,7 +68,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $_SESSION['alert'] = [
         'type' => 'error',
         'title' => 'Login Gagal',
-        'text' => 'Email, password, atau peran salah.'
+        'text' => 'Email atau password salah.'
     ];
 
     header("Location: index.php");
@@ -103,18 +101,9 @@ $conn->close();
                 <input type="email" name="email" class="w-full px-4 py-2 border rounded-lg focus:ring-blue-500" required>
             </div>
 
-            <div class="mb-4">
+            <div class="mb-6">
                 <label class="block text-gray-700 mb-2">Password</label>
                 <input type="password" name="password" class="w-full px-4 py-2 border rounded-lg focus:ring-blue-500" required>
-            </div>
-
-            <div class="mb-6">
-                <label class="block text-gray-700 mb-2">Login Sebagai</label>
-                <select name="role_selector" class="w-full px-4 py-2 border rounded-lg focus:ring-blue-500">
-                    <option value="admin">Admin</option>
-                    <option value="dokter">Dokter</option>
-                    <option value="owner">Owner</option>
-                </select>
             </div>
 
             <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">
