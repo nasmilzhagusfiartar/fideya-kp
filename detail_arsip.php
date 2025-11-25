@@ -18,6 +18,44 @@ if (!$archiveCode) {
     exit;
 }
 
+// =======================================================
+// FITUR BARU: PAGINATION & SORTING CONFIGURATION
+// =======================================================
+$limit = 10; // Jumlah data per halaman
+
+// 1. Inisialisasi Pagination
+$page = isset($_GET['halaman']) && is_numeric($_GET['halaman']) ? (int)$_GET['halaman'] : 1;
+// Batasi halaman minimal 1
+if ($page < 1) {
+    $page = 1;
+}
+
+// 2. Inisialisasi Sorting
+$allowed_columns_sql = [
+    'nrm' => 'p.nrm',
+    'name' => 'p.name',
+    'gender' => 'p.gender',
+    'diagnosis' => 'p.diagnosis',
+    'doctor' => 'd.name', // Alias dari kolom JOIN
+    'date' => 'p.patient_date'
+];
+
+$sort_col_param = $_GET['sort'] ?? 'name';
+$sort_order = strtoupper($_GET['order'] ?? 'ASC');
+
+// Validasi input sorting
+if (!isset($allowed_columns_sql[$sort_col_param])) {
+    $sort_col_param = 'name'; // Default
+}
+if (!in_array($sort_order, ['ASC', 'DESC'])) {
+    $sort_order = 'ASC'; // Default
+}
+$order_by_sql = $allowed_columns_sql[$sort_col_param] . ' ' . $sort_order;
+// =======================================================
+// END PAGINATION & SORTING CONFIGURATION
+// =======================================================
+
+
 // 1. Ambil ID Arsip dari Kode Arsip
 $stmt = $conn->prepare("SELECT id FROM archives WHERE archive_code = ?");
 $stmt->bind_param("s", $archiveCode);
@@ -37,7 +75,7 @@ while ($row = $doctorResult->fetch_assoc()) {
     $doctors[] = $row;
 }
 
-// 2. Logika CRUD Pasien (Hanya Admin)
+// 3. Logika CRUD Pasien (Hanya Admin) - TIDAK BERUBAH
 if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
     $action = $_POST['action'] ?? '';
 
@@ -55,12 +93,10 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
         $filePath = null;
         $uploadDir = 'files/';
         
-        // =======================================================
         // REVISI: Penanganan Error Upload File yang Lebih Baik
-        // =======================================================
         if ($file && $file['error'] !== UPLOAD_ERR_NO_FILE) {
             
-            // 1. Cek jika terjadi error upload oleh PHP (misal: File Terlalu Besar)
+            // 1. Cek jika terjadi error upload oleh PHP
             if ($file['error'] !== UPLOAD_ERR_OK) {
                 switch ($file['error']) {
                     case UPLOAD_ERR_INI_SIZE:
@@ -83,7 +119,6 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
                 // Lanjutkan proses jika UPLOAD_ERR_OK
                 
                 // 2. Pengecekan keamanan dasar untuk jenis file
-                // Pastikan file_mime dicek setelah UPLOAD_ERR_OK, karena butuh $file['tmp_name'] yang valid
                 $file_mime = mime_content_type($file['tmp_name']);
                 if (strpos($file_mime, 'application/pdf') === false && strpos($file_mime, 'image/') === false) {
                     $error_message = "Jenis file tidak diizinkan. Hanya PDF dan Gambar (JPG/PNG).";
@@ -104,19 +139,18 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
                 }
             }
         }
-        // =======================================================
         
         // Jika sedang edit dan tidak ada file baru diupload, ambil path file lama
         if ($patientId && !$filePath && (!isset($file) || $file['error'] === UPLOAD_ERR_NO_FILE)) {
-             // Query untuk mendapatkan path file lama
-             $stmt_old_path = $conn->prepare("SELECT file_path FROM patients WHERE id = ?");
-             $stmt_old_path->bind_param("i", $patientId);
-             $stmt_old_path->execute();
-             $result_old_path = $stmt_old_path->get_result();
-             if ($row_old_path = $result_old_path->fetch_assoc()) {
-                 $filePath = $row_old_path['file_path'];
-             }
-             $stmt_old_path->close();
+              // Query untuk mendapatkan path file lama
+              $stmt_old_path = $conn->prepare("SELECT file_path FROM patients WHERE id = ?");
+              $stmt_old_path->bind_param("i", $patientId);
+              $stmt_old_path->execute();
+              $result_old_path = $stmt_old_path->get_result();
+              if ($row_old_path = $result_old_path->fetch_assoc()) {
+                  $filePath = $row_old_path['file_path'];
+              }
+              $stmt_old_path->close();
         }
 
         // Hanya proses simpan database jika tidak ada error file
@@ -127,7 +161,6 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
                 $types = "ssssis";
                 $params = [$nrm, $name, $gender, $diagnosis, $doctorId, $date];
 
-                // Jika ada file baru diupload, $filePath akan terisi. Jika edit tanpa upload, $filePath berisi path lama.
                 $sql_parts[] = "file_path=?";
                 $types .= "s";
                 $params[] = $filePath;
@@ -139,16 +172,15 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
                 $stmt = $conn->prepare($sql);
                 // Menggunakan '...' untuk unpacking parameter array
                 if (!$stmt->bind_param($types, ...$params)) {
-                     $error_message = "Gagal mengikat parameter update: " . $stmt->error;
+                       $error_message = "Gagal mengikat parameter update: " . $stmt->error;
                 }
                 
             } else {
                 // Tambah Pasien Baru (INSERT)
-                // Jika tidak ada file yang dipilih, $filePath akan bernilai NULL (sesuai yang diinisialisasi)
                 $sql = "INSERT INTO patients (archive_id, nrm, name, gender, diagnosis, doctor_id, patient_date, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt = $conn->prepare($sql);
                 // Tipe data yang benar: i, s, s, s, i, s, s
-                if (!$stmt->bind_param("issssiss", $archiveId, $nrm, $name, $gender, $diagnosis, $doctorId, $date, $filePath)) {
+                if (!$stmt->bind_param("isssisss", $archiveId, $nrm, $name, $gender, $diagnosis, $doctorId, $date, $filePath)) {
                     $error_message = "Gagal mengikat parameter insert: " . $stmt->error;
                 }
             }
@@ -166,14 +198,14 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
             }
         }
         
-        // REVISI: Redirect dengan pesan error jika ada kegagalan file/database
+        // Redirect dengan pesan error jika ada kegagalan file/database
         if (isset($error_message)) {
             header("Location: detail_arsip.php?code=" . urlencode($archiveCode) . "&status=error&msg=" . urlencode($error_message));
             exit;
         }
     }
 } 
-// Logika Delete Pasien
+// Logika Delete Pasien - TIDAK BERUBAH
 elseif (isAdmin() && isset($_GET['delete_id'])) {
     $deleteId = $_GET['delete_id'];
     
@@ -225,17 +257,47 @@ if (isset($_GET['status']) && isset($_GET['msg'])) {
     }
 }
 
+// =======================================================
+// FITUR BARU: LOGIKA PAGINATION (Total Data & Halaman)
+// =======================================================
+// 1. Hitung Total Pasien (tanpa filter/search, karena filtering saat ini client-side)
+$count_sql = "SELECT COUNT(*) AS total FROM patients WHERE archive_id = ?";
+$stmt_count = $conn->prepare($count_sql);
+$stmt_count->bind_param("i", $archiveId);
+$stmt_count->execute();
+$count_result = $stmt_count->get_result();
+$total_patients = $count_result->fetch_assoc()['total'];
+$stmt_count->close();
 
-// 3. Ambil Daftar Pasien untuk Arsip Ini
+$total_pages = ceil($total_patients / $limit);
+
+// Tentukan offset setelah mengetahui total halaman
+$offset = ($page - 1) * $limit;
+
+// Pastikan offset tidak negatif
+if ($offset < 0) {
+    $offset = 0;
+}
+// =======================================================
+// END LOGIKA PAGINATION
+// =======================================================
+
+
+// 4. Ambil Daftar Pasien untuk Arsip Ini (Dengan Pagination dan Sorting)
 $patients = [];
 $sql = "
     SELECT p.*, d.name as doctor_name 
     FROM patients p
     JOIN doctors d ON p.doctor_id = d.id
     WHERE p.archive_id = ?
+    ORDER BY {$order_by_sql}
+    LIMIT ? OFFSET ?
 ";
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("i", $archiveId);
+
+// Bind archiveId, limit, dan offset
+// i: integer (archiveId), i: integer (limit), i: integer (offset)
+$stmt->bind_param("iii", $archiveId, $limit, $offset); 
 $stmt->execute();
 $result = $stmt->get_result();
 
@@ -249,6 +311,30 @@ $conn->close();
 // Set user display variables
 $role_display = ucfirst($current_user_role); 
 $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
+
+// =======================================================
+// HELPER FUNCTION UNTUK SORTING LINK
+// =======================================================
+function get_sort_link($column, $current_sort_param, $current_order, $archiveCode) {
+    // Tentukan urutan dan ikon baru
+    $new_order = 'ASC';
+    $arrow = '<i class="fas fa-sort ml-1 text-gray-400"></i>';
+
+    if ($current_sort_param === $column) {
+        $new_order = ($current_order === 'ASC') ? 'DESC' : 'ASC';
+        $arrow = ($current_order === 'ASC') ? '<i class="fas fa-sort-up ml-1 text-blue-600"></i>' : '<i class="fas fa-sort-down ml-1 text-blue-600"></i>';
+    }
+
+    // Ambil parameter halaman saat ini (jika ada) untuk dipertahankan
+    $current_page = $_GET['halaman'] ?? 1;
+    $halaman_param = ($current_page > 1) ? "&halaman={$current_page}" : "";
+
+    $base_url = "detail_arsip.php?code=" . urlencode($archiveCode);
+    $link = "{$base_url}&sort={$column}&order={$new_order}{$halaman_param}";
+
+    return "<a href=\"{$link}\" class=\"flex items-center hover:text-blue-500 transition\">{$arrow}</a>";
+}
+// =======================================================
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -270,11 +356,11 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
 <body class="bg-gray-50 text-gray-800 font-sans">
 
     <div class="relative min-h-screen md:flex">
-         <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
-            <button id="hamburger-btn" class="focus:outline-none"><i class="fas fa-bars fa-lg"></i></button>
-            <h1 class="text-xl font-bold hidden md:flex">Fideya</h1>
-            <div class="w-8"></div>
-        </header>
+        <header class="md:hidden flex justify-between items-center p-4 bg-blue-800 text-white shadow-md z-10">
+             <button id="hamburger-btn" class="focus:outline-none"><i class="fas fa-bars fa-lg"></i></button>
+             <h1 class="text-xl font-bold hidden md:flex">Fideya</h1>
+             <div class="w-8"></div>
+         </header>
 
         <aside id="sidebar" class="bg-blue-800 text-white w-64 flex-col fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 md:flex z-30">
             <div class=" md:flex items-center justify-center p-6 text-2xl font-bold border-b border-blue-700">Fideya</div>
@@ -321,27 +407,59 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
 
                         <div class="overflow-x-auto">
                             <table class="w-full text-left">
-                                <thead><tr class="border-b bg-gray-50">
-                                    <th class="p-4">NRM</th>                                    
-                                    <th class="p-4">Nama</th>
-                                    <th class="p-4">Gender</th>
-                                    <th class="p-4">Diagnosa</th>
-                                    <th class="p-4">Dokter</th>
-                                    <th class="p-4">Tanggal</th>
-                                    <th class="p-4">File</th>
-                                    <th class="p-4 text-center admin-only" style="<?php echo isAdmin() ? '' : 'display: none;'; ?>">Aksi</th>
-                                </tr></thead>
+                                <thead>
+                                    <tr class="border-b bg-gray-50">
+                                        <th class="p-4 cursor-pointer">
+                                            <div class="flex items-center justify-between">
+                                                <span>NRM</span>
+                                                <?php echo get_sort_link('nrm', $sort_col_param, $sort_order, $archiveCode); ?>
+                                            </div>
+                                        </th>
+                                        <th class="p-4 cursor-pointer">
+                                            <div class="flex items-center justify-between">
+                                                <span>Nama</span>
+                                                <?php echo get_sort_link('name', $sort_col_param, $sort_order, $archiveCode); ?>
+                                            </div>
+                                        </th>
+                                        <th class="p-4 cursor-pointer">
+                                            <div class="flex items-center justify-between">
+                                                <span>Gender</span>
+                                                <?php echo get_sort_link('gender', $sort_col_param, $sort_order, $archiveCode); ?>
+                                            </div>
+                                        </th>
+                                        <th class="p-4 cursor-pointer">
+                                            <div class="flex items-center justify-between">
+                                                <span>Diagnosa</span>
+                                                <?php echo get_sort_link('diagnosis', $sort_col_param, $sort_order, $archiveCode); ?>
+                                            </div>
+                                        </th>
+                                        <th class="p-4 cursor-pointer">
+                                            <div class="flex items-center justify-between">
+                                                <span>Dokter</span>
+                                                <?php echo get_sort_link('doctor', $sort_col_param, $sort_order, $archiveCode); ?>
+                                            </div>
+                                        </th>
+                                        <th class="p-4 cursor-pointer">
+                                            <div class="flex items-center justify-between">
+                                                <span>Tanggal</span>
+                                                <?php echo get_sort_link('date', $sort_col_param, $sort_order, $archiveCode); ?>
+                                            </div>
+                                        </th>
+                                        <th class="p-4">File</th>
+                                        <th class="p-4 text-center admin-only" style="<?php echo isAdmin() ? '' : 'display: none;'; ?>">Aksi</th>
+                                    </tr>
+                                </thead>
                                 <tbody id="patient-table-body">
                                     <?php if (!empty($patients)): ?>
                                         <?php foreach ($patients as $p): ?>
                                             <tr data-id="<?php echo $p['id']; ?>" data-doctor="<?php echo htmlspecialchars($p['doctor_name']); ?>">
                                                 <td class="p-4 font-medium">
-                                                 <a 
-                                                     href="riwayat_kunjungan.php?nrm=<?php echo urlencode($p['nrm']); ?>&nama=<?php echo urlencode($p['name']); ?>"
-                                                        class="text-blue-600 hover:underline"
-                                                        >
-                                                    <?php echo htmlspecialchars($p['nrm']); ?>
-                                                 </a>
+                                                   <a 
+                                                        href="riwayat_kunjungan.php?nrm=<?php echo urlencode($p['nrm']); ?>&nama=<?php echo urlencode($p['name']); ?>"
+                                                             class="text-blue-600 hover:underline"
+                                                             >
+                                                         <?php echo htmlspecialchars($p['nrm']); ?>
+                                                       </a>
                                                 </td>
 
                                                 <td class="p-4"><?php echo htmlspecialchars($p['name']); ?></td>
@@ -350,39 +468,79 @@ $initial_char = strtoupper(substr($current_user_name ?? 'U', 0, 1));
                                                 <td class="p-4"><?php echo htmlspecialchars($p['doctor_name']); ?></td>
                                                 <td class="p-4"><?php echo date('Y-m-d', strtotime($p['patient_date'])); ?></td>
                                                 <td class="p-4">
-                                                    <?php if ($p['file_path']): ?>
-                                                        <a href="<?php echo htmlspecialchars($p['file_path']); ?>" target="_blank" class="text-blue-600 hover:underline">Lihat File</a>
-                                                    <?php else: ?>
-                                                        -
-                                                    <?php endif; ?>
+                                                     <?php if ($p['file_path']): ?>
+                                                         <a href="<?php echo htmlspecialchars($p['file_path']); ?>" target="_blank" class="text-blue-600 hover:underline">Lihat File</a>
+                                                     <?php else: ?>
+                                                         -
+                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="p-4 text-center space-x-2 admin-only" style="<?php echo isAdmin() ? '' : 'display: none;'; ?>">
-                                                    <button 
-                                                        class="btn-edit text-blue-600" 
-                                                        data-id="<?php echo $p['id']; ?>"
-                                                        data-nrm="<?php echo htmlspecialchars($p['nrm']); ?>"
-                                                        data-name="<?php echo htmlspecialchars($p['name']); ?>"
-                                                        data-gender="<?php echo htmlspecialchars($p['gender']); ?>"
-                                                        data-diagnosis="<?php echo htmlspecialchars($p['diagnosis']); ?>"
-                                                        data-doctor-id="<?php echo htmlspecialchars($p['doctor_id']); ?>"
-                                                        data-date="<?php echo date('Y-m-d', strtotime($p['patient_date'])); ?>"
-                                                        data-filepath="<?php echo htmlspecialchars($p['file_path']); ?>"
-                                                    ><i class="fas fa-edit"></i></button>
-                                                    
-                                                    <a href="?code=<?php echo urlencode($archiveCode); ?>&delete_id=<?php echo $p['id']; ?>" class="btn-delete text-red-500">
-                                                        <i class="fas fa-trash"></i>
-                                                    </a>
+                                                     <button 
+                                                         class="btn-edit text-blue-600" 
+                                                         data-id="<?php echo $p['id']; ?>"
+                                                         data-nrm="<?php echo htmlspecialchars($p['nrm']); ?>"
+                                                         data-name="<?php echo htmlspecialchars($p['name']); ?>"
+                                                         data-gender="<?php echo htmlspecialchars($p['gender']); ?>"
+                                                         data-diagnosis="<?php echo htmlspecialchars($p['diagnosis']); ?>"
+                                                         data-doctor-id="<?php echo htmlspecialchars($p['doctor_id']); ?>"
+                                                         data-date="<?php echo date('Y-m-d', strtotime($p['patient_date'])); ?>"
+                                                         data-filepath="<?php echo htmlspecialchars($p['file_path']); ?>"
+                                                     ><i class="fas fa-edit"></i></button>
+                                                     
+                                                     <a href="?code=<?php echo urlencode($archiveCode); ?>&delete_id=<?php echo $p['id']; ?>" class="btn-delete text-red-500">
+                                                         <i class="fas fa-trash"></i>
+                                                     </a>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     <?php else: ?>
-                                        <tr><td colspan="7" class="p-4 text-center text-gray-500">Tidak ada data pasien yang ditemukan.</td></tr>
+                                        <tr><td colspan="8" class="p-4 text-center text-gray-500">Tidak ada data pasien yang ditemukan.</td></tr>
                                     <?php endif; ?>
                                 </tbody>
                             </table>
-                             <p id="no-results" class="text-center text-gray-500 py-8 hidden">Tidak ada data pasien yang ditemukan.</p>
+                            <p id="no-results" class="text-center text-gray-500 py-8 hidden">Tidak ada data pasien yang ditemukan.</p>
                         </div>
-                    </div>
+                        
+                        <?php if ($total_pages > 1): ?>
+                        <div class="flex justify-between items-center mt-6">
+                            <div class="text-sm text-gray-600">
+                                Menampilkan data <?php echo min($total_patients, $offset + 1); ?> hingga <?php echo min($total_patients, $offset + $limit); ?> dari total <?php echo $total_patients; ?> data.
+                            </div>
+                            <nav class="flex items-center space-x-1" aria-label="Pagination">
+                                <?php
+                                $base_url = "detail_arsip.php?code=" . urlencode($archiveCode) . "&sort=" . urlencode($sort_col_param) . "&order=" . urlencode($sort_order);
+                                
+                                // Tombol Previous
+                                $prev_page = $page - 1;
+                                $prev_url = $base_url . "&halaman={$prev_page}";
+                                $disabled_prev = ($page <= 1) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200';
+                                ?>
+                                <a href="<?php echo $prev_url; ?>" class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md <?php echo $disabled_prev; ?>">
+                                    <i class="fas fa-chevron-left"></i>
+                                </a>
+
+                                <?php for ($i = 1; $i <= $total_pages; $i++): 
+                                    $page_url = $base_url . "&halaman={$i}";
+                                    $active_class = ($i == $page) ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-200';
+                                ?>
+                                    <a href="<?php echo $page_url; ?>" class="px-3 py-2 text-sm font-medium border rounded-md <?php echo $active_class; ?>">
+                                        <?php echo $i; ?>
+                                    </a>
+                                <?php endfor; ?>
+
+                                <?php
+                                // Tombol Next
+                                $next_page = $page + 1;
+                                $next_url = $base_url . "&halaman={$next_page}";
+                                $disabled_next = ($page >= $total_pages) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200';
+                                ?>
+                                <a href="<?php echo $next_url; ?>" class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md <?php echo $disabled_next; ?>">
+                                    <i class="fas fa-chevron-right"></i>
+                                </a>
+                            </nav>
+                        </div>
+                        <?php endif; ?>
+                        </div>
                 </div>
             </main>
         </div>
@@ -503,6 +661,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Filter dan Search (Client-side)
+    // CATATAN: Karena pagination sudah diterapkan di backend, filtering/searching
+    // yang dilakukan di sini (client-side) HANYA AKAN BEKERJA pada data yang 
+    // sedang ditampilkan (maksimal 10 data). Untuk filtering seluruh data, 
+    // Anda perlu memindahkan logika pencarian ke query SQL di backend.
     function filterAndRenderTable() {
         const searchTerm = searchInput.value.toLowerCase();
         const selectedDoctor = filterDokter.value;
@@ -571,10 +733,11 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const href = link.getAttribute('href');
             const row = link.closest('tr');
-            const name = row ? row.cells[0].textContent.trim() : 'pasien ini';
+            // Ambil NRM untuk konfirmasi
+            const nrm = row ? row.cells[0].textContent.trim() : 'pasien ini'; 
             Swal.fire({
                 title: 'Yakin ingin menghapus?',
-                text: `Data pasien "${name}" akan dihapus permanen.`,
+                text: `Data pasien dengan NRM "${nrm}" akan dihapus permanen.`,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
