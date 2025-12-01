@@ -180,7 +180,8 @@ if (isAdmin() && $_SERVER["REQUEST_METHOD"] == "POST") {
                 $sql = "INSERT INTO patients (archive_id, nrm, name, gender, diagnosis, doctor_id, patient_date, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt = $conn->prepare($sql);
                 // Tipe data yang benar: i, s, s, s, i, s, s
-                if (!$stmt->bind_param("isssisss", $archiveId, $nrm, $name, $gender, $diagnosis, $doctorId, $date, $filePath)) {
+                // Ubah menjadi "issssiss"
+if (!$stmt->bind_param("issssiss", $archiveId, $nrm, $name, $gender, $diagnosis, $doctorId, $date, $filePath)) {
                     $error_message = "Gagal mengikat parameter insert: " . $stmt->error;
                 }
             }
